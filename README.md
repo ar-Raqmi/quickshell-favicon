@@ -48,55 +48,26 @@ qs -p /path/to/quickshell-favicon
 
 > The included dock (`FaviconDock.qml`) is strictly a **demo** unless you use this as a base.
 
-## Integration Guide
+## Integration
 
-If you want to use this in your existing Quickshell setup or build a full dock, here's how to integrate it:
-
-1. **Copy the folders**: Grab `services/`, `scripts/`, and `assets/` and put them in your project.
-2. **Import the Service**: In your QML component (where you want to show the icon), add the import:
-   ```qml
-   import "./services" as Services
-   ```
-
-### Basic Integration
-
-If you just want to get the favicon for a specific window:
-
-1. **Get the Favicon**: Use the `FaviconService` to get the icon path for a window:
-   ```qml
-   readonly property string favicon: Services.FaviconService.getFavicon(toplevel)
-   ```
-2. **Display it**:
-   ```qml
-   Image {
-       source: favicon !== "" ? favicon : "your-fallback-icon"
-       visible: favicon !== ""
-   }
-   ```
-
-Check out `components/FaviconDockItem.qml` to see a full example including browser detection and system icon fallback.
-
-### Advanced Shell Integration
-
-If you are building a full Quickshell bar or dock, you likely have a `guessWindowIcon` function. You can hook this service into it for seamless favicon support.
-
-Example for `AppSearch.qml` or similar:
-```qml
-function guessWindowIcon(window) {
-    if (!window) return "image-missing";
-    
-    // Dependency to trigger re-evaluation when icons are downloaded
-    const _ = FaviconService.cacheCounter;
-    
-    // Use FaviconService for known browsers
-    if (isBrowser(window.class)) {
-        const favicon = FaviconService.getFavicon(window);
-        if (favicon) return favicon;
+1.  **Copy the folders**: Grab `services/`, `scripts/`, and `assets/` and put them in your project.
+2.  **Import**: `import "./services" as Services`
+3.  **The Property**: Add this to your bar or dock item. We use `cacheCounter` to make the UI update instantly when a new icon is downloaded!
+    ```qml
+    readonly property string faviconPath: {
+        const _ = Services.FaviconService.cacheCounter; // This logic triggers a refresh
+        return Services.FaviconService.getFavicon(toplevel);
     }
+    ```
+4.  **Display it**:
+    ```qml
+    Image {
+        width: 24; height: 24
+        source: faviconPath !== "" ? faviconPath : "your-fallback-icon"
+    }
+    ```
 
-    return "generic-icon-fallback";
-}
-```
+*Check out `components/FaviconDockItem.qml` for a full example including system icon fallbacks and browser detection.*
 
 ## Customize 
 
