@@ -11,7 +11,7 @@ Favicons in your Quickshell bar or dock.
 
 ## Why this exists
 
-I get confused when I have 10 browser tabs open in different workspaces.<br>*Is this workspace for YouTube, Zoom, X or random websites? lol.*
+I get confused when I have 10 browser windows open in different workspaces.<br>*Is this workspace for YouTube, Zoom, X or random websites? lol.*
 
 PWAs are okay but making one for every site is a bloated solution. This project just guesses what website you're looking at and grabs the icon for you.
 
