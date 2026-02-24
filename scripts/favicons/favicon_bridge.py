@@ -61,12 +61,23 @@ BROWSER_SUFFIX = re.compile(
     re.IGNORECASE
 )
 
+# Strips unread/notification counters that apps prepend to titles.
+# e.g. "(3) Final Exam Discussion" -> "Final Exam Discussion"
+# e.g. "* Editing: notes.md" -> "Editing: notes.md"
+NOISE_PREFIX = re.compile(r"^\s*[\[(]\d+[\])]\s*|^\s*\*\s*")
+
 def clean_title(raw_title):
     """Turns 'YouTube - Mozilla Firefox' into just 'YouTube'."""
     if not raw_title:
         return None
     clean = BROWSER_SUFFIX.sub("", raw_title).strip()
     return clean if clean else None
+
+def normalize_title(title):
+    """Strips dynamic noise prefixes. '(1) Meeting' -> 'Meeting'."""
+    if not title:
+        return title
+    return NOISE_PREFIX.sub("", title).strip()
 
 def extract_exact_mappings():
     """The heavy lifting: mapping your window titles to actual URLs from your history."""
@@ -106,6 +117,11 @@ def extract_exact_mappings():
                 cleaned = clean_title(title)
                 if cleaned and cleaned not in title_to_url:
                     title_to_url[cleaned] = url
+                # Also store the normalized version so FaviconService can
+                # fuzzy-match even if page titles have changed slightly
+                normalized = normalize_title(cleaned) if cleaned else None
+                if normalized and normalized != cleaned and normalized not in title_to_url:
+                    title_to_url[normalized] = url
             
             conn.close()
             

@@ -61,16 +61,20 @@ Singleton {
 
     /**
      * This is the brain. It figures out what icon goes with which window.
-     * 1. Check browser history (Did you visit this?)
-     * 2. Try to guess domain from title (regex magic)
-     * 3. Keyword matching (e.g. "Gmail" -> mail.google.com)
-     * 4. If we know the domain but have no icon -> Download it!
+     * 1. Normalize title (strip unread counters like "(3) ", "* ")
+     * 2. Exact history match ("YouTube" -> youtube.com from your browser history)
+     * 3. Fuzzy history match ("(1) Final Exam" matches "Final Exam" -> zoom.us)
+     * 4. Brand name map ("Teams" -> teams.microsoft.com, "Zoom" -> zoom.us etc.)
+     * 5. Domain regex (looks for things like "github.com" in the title itself)
+     * 6. Fallback Google-service keyword map
+     * If we've got a domain but no icon yet -> kick off a download!
      */
     function getFavicon(window) {
         if (!window || !window.title) return "";
         
         const title = window.title;
         const cleanRef = cleanTitle(title);
+        const normRef = normalizeTitle(cleanRef);
         
         // Tier 1: Look at the browser history we scanned earlier (Best accuracy!)
         let fullUrl = root.urlMap[cleanRef];
@@ -78,50 +82,88 @@ Singleton {
         
         if (fullUrl) {
             domain = extractDomain(fullUrl);
-        } else {
-            // Tier 2: Try to guess the domain from the title (e.g. "github.com")
-            // WARNING/NOTE: This is where "hallucinations" happen if a title 
-            // has a word that looks like a domain but isn't.
-            // This used happen to me where I used my workplace "email site" it uses Gmail's icon.
-            domain = extractDomainFromTitle(cleanRef);
         }
 
-        // Tier 3: Use the high-quality icons we shipped with for famous services
-        if (!domain || domain === "google.com") {
-            const keywords = {
-                "Gmail": "mail.google.com",
-                "Inbox": "mail.google.com",
-                "Google Calendar": "calendar.google.com",
-                "Calendar": "calendar.google.com",
-                "Google Drive": "drive.google.com",
-                "Drive": "drive.google.com",
-                "Google Docs": "docs.google.com",
-                "Google Sheets": "sheets.google.com",
-                "Google Slides": "slides.google.com",
-                "Google Meet": "meet.google.com",
-                "Google Maps": "maps.google.com",
-                "Gemini": "gemini.google.com",
-                "YouTube": "youtube.com",
-                "Google AI Studio": "aistudio.google.com",
-                "NotebookLM": "notebooklm.google.com",
-                "Google Photos": "photos.google.com",
-                "Material 3": "m3.material.io"
+        // Tier 2: Fuzzy history lookup - handles dynamic titles like "(3) Final Exam"
+        // that were recorded as "Final Exam" in history
+        if (!domain) {
+            const normKeys = Object.keys(root.urlMap);
+            for (let i = 0; i < normKeys.length; i++) {
+                const key = normKeys[i];
+                const normKey = normalizeTitle(key);
+                // Title contains the history key, or vice versa (minimum 5 chars to avoid noise)
+                if (normKey.length >= 5 && (normRef.includes(normKey) || normKey.includes(normRef))) {
+                    fullUrl = root.urlMap[key];
+                    domain = extractDomain(fullUrl);
+                    break;
+                }
+            }
+        }
+        
+        // Tier 3: Brand name map - catches "Teams", "Zoom", "Slack" etc.
+        // I'm too lazy, this is completly Gemini-generated
+        if (!domain) {
+            const brandMap = {
+                // --- Microsoft ---
+                "microsoft teams": "teams.microsoft.com",
+                "teams":           "teams.microsoft.com",
+                // --- Conferencing ---
+                "zoom":            "zoom.us",
+                "google meet":     "meet.google.com",
+                "meet":            "meet.google.com",
+                "webex":           "webex.com",
+                "gotomeeting":     "gotomeeting.com",
+                // --- Comms & Productivity ---
+                "slack":           "slack.com",
+                "discord":         "discord.com",
+                "telegram":        "web.telegram.org",
+                "whatsapp":        "web.whatsapp.com",
+                "notion":          "notion.so",
+                "trello":          "trello.com",
+                "linear":          "linear.app",
+                "jira":            "jira.atlassian.com",
+                "confluence":      "confluence.atlassian.com",
+                "figma":           "figma.com",
+                "miro":            "miro.com",
+                // --- Google ---
+                "gmail":           "mail.google.com",
+                "google calendar": "calendar.google.com",
+                "google drive":    "drive.google.com",
+                "google docs":     "docs.google.com",
+                "google sheets":   "sheets.google.com",
+                "google slides":   "slides.google.com",
+                "google meet":     "meet.google.com",
+                "google maps":     "maps.google.com",
+                "gemini":          "gemini.google.com",
+                "youtube":         "youtube.com",
+                "google ai studio":"aistudio.google.com",
+                "notebooklm":      "notebooklm.google.com",
+                "google photos":   "photos.google.com",
             };
 
-            const lowerTitle = cleanRef.toLowerCase();
-            for (const kw in keywords) {
-                if (lowerTitle.includes(kw.toLowerCase())) {
-                    domain = keywords[kw];
+            const lowerTitle = normRef.toLowerCase();
+            // Sort by key length descending so "microsoft teams" beats "teams"
+            const brandKeys = Object.keys(brandMap).sort((a, b) => b.length - a.length);
+            for (const kw of brandKeys) {
+                if (lowerTitle.includes(kw)) {
+                    domain = brandMap[kw];
                     break;
                 }
             }
         }
 
+        // Tier 4: Try to extract a domain directly from the title (e.g. "github.com · Pull Request")
+        if (!domain) {
+            domain = extractDomainFromTitle(cleanRef);
+        }
+
         if (!domain) return "";
 
-        // Clean up common aliases to use our official icons
+        // Canonical alias cleanup
         if (domain === "gmail.com") domain = "mail.google.com";
         if (domain === "gemini.ai") domain = "gemini.google.com";
+        if (domain === "google.com") domain = ""; // generic G, not useful
+        if (!domain) return "";
         
         // Priority 1: Do we have it cached already?
         if (readyDomains[domain]) {
@@ -153,7 +195,19 @@ Singleton {
         return title.replace(/\s*[-|—|·]\s*(Mozilla Firefox|Brave|Google Chrome|Chromium|Vivaldi|Edge|Zen|Floorp|LibreWolf|Thorium|Waterfox|Mullvad|Tor Browser|Chrome|Firefox|Web Browser|Browser|Quickshell|Antigravity)\s*$/i, "").trim();
     }
 
-    // Grab "example.com" from "https://www.example.com/page"
+    // Strips dynamic noise that apps add to titles:
+    // "(3) Final Exam" -> "Final Exam"
+    // "* Editing: notes" -> "Editing: notes"
+    // "[2] Chat room" -> "Chat room"
+    function normalizeTitle(title) {
+        if (!title) return "";
+        return title
+            .replace(/^\s*[\[(]\d+[\])]\s*/g, "") // leading (3) or [3]
+            .replace(/^\s*\*\s*/g, "")             // leading *
+            .trim();
+    }
+
+    // Grab "teams.microsoft.com" from "https://teams.microsoft.com/page"
     function extractDomain(url) {
         if (!url) return "";
         const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
@@ -168,10 +222,14 @@ Singleton {
             return "github.com";
         }
         
-        // Look for anything that looks like a domain name
-        const domainMatch = cleanTitle.match(/(?:https?:\/\/)?(?:www\.)?([a-z0-9-]{2,})\.([a-z]{2,3}(\.[a-z]{2})?|land|nz|ai|io|ly|so|me|dev|app|info|xyz|icu|top|site|online)/i);
+        // Upgraded regex: now correctly handles subdomains like "teams.microsoft.com"
+        // Groups: (subdomain.parts.)? (second-level) . (tld)
+        const domainMatch = cleanTitle.match(
+            /(?:https?:\/\/)?(?:www\.)?((?:[a-z0-9-]{2,}\.)+)?([a-z0-9-]{2,})\.(com|net|org|edu|gov|io|co|us|uk|de|fr|jp|au|ca|app|dev|ai|me|ly|so|icu|xyz|top|info|site|online|land|nz)/i
+        );
         if (domainMatch) {
-            return (domainMatch[1] + "." + domainMatch[2]).toLowerCase();
+            const prefix = domainMatch[1] || "";
+            return (prefix + domainMatch[2] + "." + domainMatch[3]).toLowerCase();
         }
         return "";
     }
