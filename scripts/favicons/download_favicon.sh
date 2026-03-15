@@ -87,7 +87,7 @@ curl -f -L -s --max-time 10 "https://favicon.vemetric.com/${DOMAIN}?size=128" -o
 if [ -f "${TMP_PATH}.raw" ]; then
     if head -c 10 "${TMP_PATH}.raw" | grep -qiE "^(<svg|<\?xml)"; then
         # Check if it's their generic "I don't know" icon
-        if grep -qE "(world-question|icon-tabler-world|icon-tabler-globe)" "${TMP_PATH}.raw" 2>/dev/null; then
+        if grep -qE "(world-question|icon-tabler-world|icon-tabler-globe|potrace)" "${TMP_PATH}.raw" 2>/dev/null; then
             rm -f "${TMP_PATH}.raw"
         else
             mv "${TMP_PATH}.raw" "${TMP_PATH}.svg"
@@ -122,6 +122,9 @@ class IconParser(HTMLParser):
             if not href:
                 return
                 
+            if 'mask-icon' in rel:
+                return
+
             if 'apple-touch-icon' in rel:
                 self.apple_icon = href
             elif 'icon' in rel or 'shortcut icon' in rel:
@@ -133,7 +136,7 @@ try:
 except Exception:
     pass
 
-icon = parser.apple_icon or parser.best_icon
+icon = parser.best_icon or parser.apple_icon
 if icon:
     print(icon.strip())
 else:
